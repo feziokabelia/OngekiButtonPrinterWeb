@@ -1,0 +1,59 @@
+<!-- templates/button_printer/index.html -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+</head>
+<body>
+    <div id="status" class="status connecting">连接中...</div>
+    <div id="version" class="version">{{ title }} v{{ version }}</div>
+
+    <div id="controller-container">
+        <div class="background-image"></div>
+        <div id="buttons-container"></div>
+    </div>
+
+    <script>
+        console.log("=== 数据传递调试开始 ===");
+
+        // 方法1：直接使用模板变量
+        console.log("1. 原始模板变量:", "{{ buttons_data_json|escapejs }}");
+
+        // 方法2：安全解析
+        let BUTTONS_DATA = [];
+        try {
+            const rawJsonString = "{{ buttons_data_json|escapejs }}";
+            console.log("2. 转义后的JSON字符串:", rawJsonString);
+            console.log("3. 字符串长度:", rawJsonString.length);
+
+            if (rawJsonString && rawJsonString !== "None" && rawJsonString.length > 0) {
+                BUTTONS_DATA = JSON.parse(rawJsonString);
+                console.log("4. 解析成功:", BUTTONS_DATA);
+            } else {
+                console.warn("5. JSON字符串为空或无效");
+            }
+        } catch (error) {
+            console.error("6. JSON解析错误:", error);
+            console.error("7. 错误详情:", error.message);
+        }
+
+        console.log("8. 最终 BUTTONS_DATA:", BUTTONS_DATA);
+        console.log("9. BUTTONS_DATA 长度:", BUTTONS_DATA.length);
+        console.log("10. BUTTONS_DATA 类型:", typeof BUTTONS_DATA);
+        console.log("11. 是否为数组:", Array.isArray(BUTTONS_DATA));
+
+        const WEBSOCKET_URL = '{{ websocket_url }}';
+        console.log("12. WebSocket URL:", WEBSOCKET_URL);
+        console.log('=== 页面加载调试信息 ===');
+        console.log('📊 BUTTONS_DATA:', BUTTONS_DATA);
+        console.log('📊 BUTTONS_DATA 长度:', BUTTONS_DATA ? BUTTONS_DATA.length : 0);
+        console.log('🔗 WEBSOCKET_URL:', WEBSOCKET_URL);
+    </script>
+
+    <script src="{% static 'js/hid-controller.js' %}"></script>
+</body>
+</html>

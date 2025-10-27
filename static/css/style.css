@@ -1,0 +1,160 @@
+/* static/css/style.css */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    background: transparent;
+    font-family: 'Arial', 'Microsoft YaHei', sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    overflow: hidden;
+}
+
+/* 连接状态指示器 */
+.status {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 10px 20px;
+    border-radius: 20px;
+    color: white;
+    font-weight: bold;
+    font-size: 14px;
+    z-index: 1000;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.status.connected {
+    background: linear-gradient(45deg, #27ae60, #2ecc71);
+}
+
+.status.disconnected {
+    background: linear-gradient(45deg, #e74c3c, #c0392b);
+}
+
+.status.connecting {
+    background: linear-gradient(45deg, #f39c12, #e67e22);
+}
+
+/* 版本信息 */
+.version {
+    position: fixed;
+    bottom: 15px;
+    left: 15px;
+    color: rgba(0, 0, 0, 0.7);
+    font-size: 12px;
+    z-index: 1000;
+}
+
+/* 主控制器容器 */
+#controller-container {
+    position: relative;
+    width: 600px;
+    height: 800px;
+    /* 移除边框和阴影，保持透明 */
+    border: none;
+    box-shadow: none;
+    overflow: hidden;
+    background: transparent;
+}
+
+/* 等待背景图片 - 作为底层 */
+.background-image {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: url('../images/buttons/waiting.png');
+    background-size: contain; /* 保持原图比例 */
+    background-position: center;
+    background-repeat: no-repeat;
+    z-index: 1; /* 底层 */
+    pointer-events: none; /* 不接收鼠标事件 */
+}
+#first-images_l0 {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: url('../images/buttons/l_0.png');
+    background-size: contain; /* 保持原图比例 */
+    background-position: center;
+    background-repeat: no-repeat;
+    z-index: 1; /* 底层 */
+    pointer-events: none; /* 不接收鼠标事件 */
+}
+#first-images_r0 {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: url('../images/buttons/r_0.png');
+    background-size: contain; /* 保持原图比例 */
+    background-position: center;
+    background-repeat: no-repeat;
+    z-index: 1; /* 底层 */
+    pointer-events: none; /* 不接收鼠标事件 */
+}
+#first-images_swing {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: url('../images/buttons/swing.png');
+    background-size: contain; /* 保持原图比例 */
+    background-position: center;
+    background-repeat: no-repeat;
+    z-index: 1; /* 底层 */
+    pointer-events: none; /* 不接收鼠标事件 */
+}
+.first-display{
+    opacity: 0;
+}
+/* 按钮容器 - 放置所有动态按钮 */
+#buttons-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 2; /* 在背景图片之上 */
+}
+/* 设置摇杆图层 */
+.z-buttons{
+    z-index: 3;
+}
+.z-swing {
+    z-index: 99;
+}
+/* 动态生成的按钮图片 - 与背景图片同样大小 */
+.dynamic-button {
+    position: absolute;
+    width: 600px; /* 与容器相同宽度 */
+    height: 800px; /* 与容器相同高度 */
+    object-fit: contain; /* 保持图片比例 */
+}
+
+/* 隐藏状态 */
+.dynamic-button.hidden {
+    opacity: 0;
+    transform: scale(0.95);
+    pointer-events: none;
+}
+
+/* 显示状态 */
+.dynamic-button.visible {
+    opacity: 1;
+    transform: scale(1);
+}
+.status.connecting {
+    animation: pulse 2s infinite;
+}

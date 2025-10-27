@@ -1,0 +1,44 @@
+<!-- templates/button_printer/index.html -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+</head>
+<body>
+    <!-- 版本信息 -->
+    <div id="version" class="version">{{ title }} v{{ version }}</div>
+
+    <!-- 主控制器容器 -->
+    <div id="controller-container">
+        <!-- 等待背景图片 - 固定大小 600x800 -->
+        <div class="background-image"></div>
+        <div id="first-image-container">
+            <div id="first-images_l0"></div>
+            <div id="first-images_r0"></div>
+            <div id="first-images_swing"></div>
+        </div>
+
+
+        <!-- 按钮图片容器 - 所有动态按钮将叠加在背景之上 -->
+        <div id="buttons-container">
+            <!-- 所有按钮将通过 JavaScript 动态创建 -->
+        </div>
+    </div>
+
+    <!-- 数据传递 -->
+    <script>
+        const BUTTONS_DATA = {{ buttons_data_json|default:"[]"|safe }};
+        const WEBSOCKET_URL = '{{ websocket_url }}';
+
+        // 调试信息
+        // console.log('📊 按钮数据:', BUTTONS_DATA);
+        console.log('🔗 WebSocket URL:', WEBSOCKET_URL);
+    </script>
+
+    <script src="{% static 'js/hid-controller.js' %}"></script>
+</body>
+</html>
