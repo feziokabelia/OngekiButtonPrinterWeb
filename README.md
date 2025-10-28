@@ -3,12 +3,13 @@
 ![Assembly photo](pictures/krq6u-ovrwt.gif)
 
 ### 目前支持的手台：
-IO4手台（my台，sim台等使用IO4的手台）
-
+IO4手台（my台，sim台等使用IO4的手台）  
+Ontrolle（dao台）  
+Nageki  
 ### 计划中：
-1.打包（  
+1.打包 ✅  
 2.增加设置页面  
-3.整合其他手台版本（dao，na...）
+3.支持源台焊台
 ## 本地部署
 ### 环境
 Python 3.10+
@@ -56,5 +57,7 @@ daphne Ongeki_helper_Web.asgi:application --port 8000 --verbosity 2
 python hid_reader.py
 # 成功的话 http://127.0.0.1:8000/运行
 ```
-### [注意]:
-该版本为Web版本
+### [注意]
+该版本为Web版本，独立版本点[这里](https://github.com/feziokabelia/OngekiButtonPrinter)  
+
+### 可以找主播定制小人儿啦，[b站私信](https://space.bilibili.com/4840504)  私信联系喵( ˘ ³˘)♥

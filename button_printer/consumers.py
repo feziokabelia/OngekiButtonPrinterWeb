@@ -15,7 +15,7 @@ class HIDConsumer(AsyncWebsocketConsumer):
         self.connected_time = None
 
     async def connect(self):
-        """WebSocket连接建立 - 优化版本"""
+        """WebSocket连接建立"""
         self.connected_time = time.time()
 
         await self.accept()

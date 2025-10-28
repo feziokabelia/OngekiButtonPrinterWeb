@@ -2,7 +2,7 @@
 import configparser
 import math
 import os
-
+import sys
 
 OUTPUT_T_FORMAT = '<8h 4h 2B 2B 2H 2B 29x'  # 小端字节序，2B 2B 表示 2个 coin_data_t（每个2字节）
 LW = "31"
@@ -14,7 +14,7 @@ RR = "1"
 RG = "16"
 RB = "15"
 RW = "14"
-key_map = {
+key_map_io4 = {
     # 索引0
     0: {
         7: LR,  # 左1（第7位）
@@ -29,12 +29,59 @@ key_map = {
         9: RW  # 右侧
     }
 }
+key_map_o = {
+    7: LR,
+    6: LG,
+    5: LB,
+    4: RR,
+    3: RG,
+    2: RB,
+    1: LW,
+    0: RW
+}
+key_map_o_idk = {
+    0: LR,
+    1: LG,
+    2: LB,
+    3: RR,
+    4: RG,
+    5: RB,
+    7: LW,
+    6: RW
+}
+key_map_na = {
+    0: LR,
+    1: LG,
+    2: LB,
+    5: RR,
+    6: RG,
+    7: RB,
+    3: LW,
+    8: RW
+
+}
 config = configparser.ConfigParser()
+
+
+def get_config_path():
+    """获取config.ini文件的路径"""
+    if getattr(sys, 'frozen', False):
+        # 打包模式 - 从EXE所在目录读取
+        base_dir = os.path.dirname(sys.executable)
+    else:
+        # 开发模式 - 从脚本所在目录读取
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+
+    # 在EXE所在目录查找config.ini
+    config_path = os.path.join(base_dir, 'config.ini')
+    return config_path
+
+
 try:
-    config_path = os.path.join(os.path.dirname(__file__), 'config.ini')
+    # config_path = os.path.join(os.path.dirname(__file__), 'config.ini')
+    config_path = get_config_path()
+    print(f"config_path                {config_path}")
     config.read(config_path)
-    VENDOR_ID = int(config.get('deviceid', 'VENDOR_ID'), 16)
-    PRODUCT_ID = int(config.get('deviceid', 'PRODUCT_ID'), 16)
     L_MAX = int(config.get('boundary', 'L_MAX'))
     R_MAX = int(config.get('boundary', 'R_MAX'))
     # 摇杆边界值设定 [L_MAX L2] [L2 L1] [L1 R1] [R1 R2] [R2 R_MAX]
@@ -52,7 +99,6 @@ except configparser.Error as e:
     print("fail to read config.ini")
 
 
-# button_printer/services.py - 添加新方法
 def close_swing(events):
     lever_str = {"lever_0", "lever_1", "lever_-1", "lever_2", "lever_-2"}
     for i in lever_str:
@@ -60,13 +106,28 @@ def close_swing(events):
     return events
 
 
-def show_lever(data_hid, key_data, pressed_keys, events):
+def show_lever(data_hid, key_data, pressed_keys, events, device_name):
     result = []
     # 显示摇杆
-    position = data_hid.get('rotary')[1]
-    pos_image = HIDService.get_pos(position)
-    sub_pos = HIDService.get_sub_position(data_hid.get('rotary')[0])
-    # print(sub_pos)
+    if device_name == "io4":
+        position = data_hid.get('rotary')[1]
+        pos_image = HIDService.get_pos(position)
+        sub_pos = HIDService.get_sub_position(data_hid.get('rotary')[0])
+        key_map = key_map_io4
+        # print(sub_pos)
+    else:
+        # 显示摇杆
+        if device_name == "nageki":
+            key_map = key_map_na
+        if device_name == "ontroller":
+            if int(data_hid.get("idk")) == 0:
+                key_map = key_map_o
+            else:
+                key_map = key_map_o_idk
+        position = data_hid.get("pos")  # 摇杆位置
+        pos_image = HIDService.get_pos(position)
+        sub_pos = HIDService.get_sub_position(data_hid.get("sub_pos"))
+        # print(sub_pos)
 
     is_l_buttons = False
     is_r_buttons = False
@@ -140,27 +201,36 @@ def show_lever(data_hid, key_data, pressed_keys, events):
             events.append({'key': "r_" + str(HIDService.get_pos(HIDService.last_lever_pos)), 'visible': False, })
         HIDService.last_subpos = sub_pos
     # print("l_" + pos_image)
-    for switch_idx in range(2):  # 遍历左/右开关
-        for bit_pos in range(16):  # 检查每一位
-            new_state = int(key_data[switch_idx][bit_pos])  # 注意：bits[0]是MSB（Bit15）
-            if switch_idx == 1 and bit_pos == 9:  # 特殊处理RW
-                if new_state == 0:
-                    new_state = 1
-                else:
-                    new_state = 0
+    if device_name == "io4":
+        for switch_idx in range(2):  # 遍历左/右开关
+            for bit_pos in range(16):  # 检查每一位
+                new_state = int(key_data[switch_idx][bit_pos])  # 注意：bits[0]是MSB（Bit15）
+                if switch_idx == 1 and bit_pos == 9:  # 特殊处理RW
+                    if new_state == 0:
+                        new_state = 1
+                    else:
+                        new_state = 0
+                if new_state == 1:
+                    if switch_idx == 0:
+                        key_map_l = key_map.get(switch_idx)
+                        for i in key_map_l.keys():
+                            if bit_pos == i:
+                                pressed_keys.append(key_map_l.get(i))
+                    else:
+                        key_map_r = key_map.get(switch_idx)
+                        for i in key_map_r.keys():
+                            if bit_pos == i:
+                                pressed_keys.append(key_map_r.get(i))
+        if data_hid.get('system_status', 0) == 0:
+            pressed_keys.append(LW)
+    else:
+        for bit_pos in range(len(key_data)):  # 检查每一位
+            new_state = int(key_data[bit_pos])
             if new_state == 1:
-                if switch_idx == 0:
-                    key_map_l = key_map.get(switch_idx)
-                    for i in key_map_l.keys():
-                        if bit_pos == i:
-                            pressed_keys.append(key_map_l.get(i))
-                else:
-                    key_map_r = key_map.get(switch_idx)
-                    for i in key_map_r.keys():
-                        if bit_pos == i:
-                            pressed_keys.append(key_map_r.get(i))
-    if data_hid.get('system_status', 0) == 0:
-        pressed_keys.append(LW)
+                for i in key_map.keys():
+                    if bit_pos == i:
+                        print(i)
+                        pressed_keys.append(key_map.get(i))
     result.append(pressed_keys)
     result.append(last_lever_pos)
     result.append(events)
@@ -360,35 +430,34 @@ class HIDService:
             'key': key,
             'visible': visible,
         }
-        # 逻辑  发出去该显示的图片 按键 左手 右手
+        # 显示左右手背景用
+        l_flag = 0
+        r_flag = 0
+        j = 0
+        key_data = []
         try:
             #  print("-------------------------services--------------------------")
             # print(f"🔧 直接处理结构化 HID 数据: {hid_data}")
-
-            switches_data = hid_data.get('switches', (0, 0))
-            rotary_data = hid_data.get('rotary', (0, 0, 0, 0))
-            system_status = hid_data.get('system_status', 0)
-            switches_str = [f"0b{s:016b}" for s in switches_data]
-            # binary_switches = HIDService.switches_to_binary_strings(switches_str)
-            # print(f"🎮 设备状态 - 开关: {switches_str}, 旋钮: {rotary_data}, 系统: {system_status}")
-            # 直接分析 switches 数据的二进制位
-
-            # 显示左右手背景用
-            l_flag = 0
-            r_flag = 0
-            j = 0
-
-            key_data = []
-            for switch in switches_str:
-                bits = switch[2:]  # 去掉 '0b' 前缀
-                # print(bits)
-                # 直接将bits字符串转为列表，并确保长度为16
-                key_data.append(list(bits[:16].ljust(16, '0')))
-
+            if hid_data.get('DEVICE_NAME') == "io4":
+                switches_data = hid_data.get('switches', (0, 0))
+                rotary_data = hid_data.get('rotary', (0, 0, 0, 0))
+                system_status = hid_data.get('system_status', 0)
+                switches_str = [f"0b{s:016b}" for s in switches_data]
+                # binary_switches = HIDService.switches_to_binary_strings(switches_str)
+                # print(f"🎮 设备状态 - 开关: {switches_str}, 旋钮: {rotary_data}, 系统: {system_status}")
+                # 直接分析 switches 数据的二进制位
+                for switch in switches_str:
+                    bits = switch[2:]  # 去掉 '0b' 前缀
+                    # print(bits)
+                    # 直接将bits字符串转为列表，并确保长度为16
+                    key_data.append(list(bits[:16].ljust(16, '0')))
+            else:
+                key_data = hid_data.get("key")
+            DEVICE_NAME = hid_data.get("DEVICE_NAME")
             pressed_keys = []
             events = []
             # 显示摇杆
-            result = show_lever(hid_data, key_data, pressed_keys, events)
+            result = show_lever(hid_data, key_data, pressed_keys, events, DEVICE_NAME)
             pressed_keys = result[0]
             last_lever_pos = result[1]
             events = result[2]
@@ -415,13 +484,13 @@ class HIDService:
                 if current:  # press
                     if HIDService.release_button[pressed_key] == 1:
                         continue
-                    press = m_press(pressed_key, pressed_key_motion, diff1, diff2, last_lever_pos,)
+                    press = m_press(pressed_key, pressed_key_motion, diff1, diff2, last_lever_pos)
                     if press:
-                        events = events+press
+                        events = events + press
                 else:  # release
                     release = m_release(pressed_key, pressed_key_motion,)
                     if release:
-                        events = events+release
+                        events = events + release
 
             # 判断左边右边分别有多少按键
             for i in HIDService.release_button.keys():

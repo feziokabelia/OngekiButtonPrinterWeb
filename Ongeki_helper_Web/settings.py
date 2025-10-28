@@ -44,10 +44,14 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = 'Ongeki_helper_Web.urls'
 
+# 动态模板路径
+TEMPLATES_DIR = os.environ.get('DJANGO_TEMPLATES_DIR', BASE_DIR / 'templates')
+STATIC_DIR = os.environ.get('DJANGO_STATIC_DIR', BASE_DIR / 'static')
+
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [BASE_DIR / 'templates'],
+        'DIRS': [TEMPLATES_DIR],  # 静态 [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -104,7 +108,10 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # 静态文件配置
 STATIC_URL = '/static/'
-STATICFILES_DIRS = [BASE_DIR / "static"]  # 开发环境静态文件目录
+STATICFILES_DIRS = [
+    STATIC_DIR,  # 使用动态路径
+]
+# STATICFILES_DIRS = [BASE_DIR / "static"]  # 开发环境静态文件目录
 
 # Media files
 MEDIA_URL = '/media/'

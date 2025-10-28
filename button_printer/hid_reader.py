@@ -1,9 +1,9 @@
-# hid_reader_websocket.py - 独立的HID读取WebSocket客户端
 import asyncio
 import configparser
 import math
 import struct
 from ctypes import cdll
+from datetime import datetime
 
 import websockets
 import json
@@ -12,35 +12,59 @@ import sys
 import os
 
 config = configparser.ConfigParser()
+
+
+# 获取exe所在目录的路径
+def get_exe_dir():
+    """获取exe或脚本所在目录"""
+    if getattr(sys, 'frozen', False):
+        # 打包后的环境
+        return os.path.dirname(sys.executable)
+    else:
+        # 开发环境
+        return os.path.dirname(os.path.abspath(__file__))
+
+
 try:
-    config_path = os.path.join(os.path.dirname(__file__), 'config.ini')
+    config_path = os.path.abspath('config.ini')
+    # config_path = os.path.join(os.path.dirname(__file__), 'config.ini')
+    # config_path = os.path.join(get_exe_dir(), 'config.ini')
+    # print(config_path)
     config.read(config_path)
-    VENDOR_ID = int(config.get('deviceid', 'VENDOR_ID'), 16)
-    PRODUCT_ID = int(config.get('deviceid', 'PRODUCT_ID'), 16)
-    L_MAX = int(config.get('boundary', 'L_MAX'))
-    R_MAX = int(config.get('boundary', 'R_MAX'))
-    # 摇杆边界值设定 [L_MAX L2] [L2 L1] [L1 R1] [R1 R2] [R2 R_MAX]
-    if L_MAX < R_MAX:
-        temp = L_MAX
-        L_MAX = R_MAX
-        R_MAX = temp
-    space = math.ceil((L_MAX - R_MAX) / 5)
-    L_2 = L_MAX - space
-    L_1 = L_2 - space
-    R_1 = L_1 - space
-    R_2 = R_1 - space
+    DEVICE_NAME = str(config.get('device', 'device_name'))
+    idk = int(config.get('idk', 'idk'))
+    fre = float(config.get('frequency', 'fre'))
+    # print(idk)
+    if DEVICE_NAME == 'io4':
+        VENDOR_ID = 0x0CA3
+        PRODUCT_ID = 0x0021
+    elif DEVICE_NAME == 'ontroller':
+        VENDOR_ID = 0x0E8F
+        PRODUCT_ID = 0x1002
+    elif DEVICE_NAME == 'nageki':
+        VENDOR_ID = 0x2341
+        PRODUCT_ID = 0x8036
+    else:
+        raise ValueError('device_name error or device not supported')
+
 except configparser.Error as e:
     print(e)
     print("fail to read config.ini")
+except ValueError as e:
+    print(e)
+    with open('config_error.txt', 'w', encoding='utf-8') as file:
+        file.write(f"{e}")
+    sys.exit()
 
 # hidapi.dll位置
 dll_path = os.path.abspath('hidapi.dll')
+# dll_path = os.path.join(get_exe_dir(), 'hidapi.dll')
 # 加载hid
 try:
+    # print(dll_path)
     cdll.LoadLibrary(dll_path)  # 使用绝对路径
     import hid
-
-    print(f"成功加载 hidapi!  路径{dll_path}")
+    # print(f"成功加载 hidapi!  路径{dll_path}")
 except Exception as e:
     with open('hid_error.log', 'w') as file:
         file.write("fail to load hidapi.dll!")
@@ -48,6 +72,19 @@ except Exception as e:
     print(f"加载失败: {e}")
     sys.exit()
 OUTPUT_T_FORMAT = '<8h 4h 2B 2B 2H 2B 29x'  # 小端字节序，2B 2B 表示 2个 coin_data_t（每个2字节）
+button_positions = [11, 12, 13, 14, 15, 16, 17, 18]  # 左侧→右侧
+
+
+def parse_output_data(data):
+    # 解析前 24 字节（按钮 10B + 摇杆 H + 扫描 B + AimiId 10B + 测试按钮 B）
+    fmt = "<10BhB10BB"  # 小端序
+    unpacked = struct.unpack(fmt, data[:24])
+    buttons = unpacked[:10]
+    lever = unpacked[10]
+    scan = unpacked[11]
+    aimi_id = unpacked[12:22]
+    opt_button = unpacked[22]
+    return buttons, lever, scan, aimi_id, opt_button
 
 
 class RealHIDWebSocketReader:
@@ -72,7 +109,7 @@ class RealHIDWebSocketReader:
 
         # HID设备
         self.hid_device = None
-        self.polling_interval = 0.025  # 1ms polling for real device
+        self.polling_interval = fre  # 25ms读取延迟
 
         # 数据
         self.data = None
@@ -113,13 +150,21 @@ class RealHIDWebSocketReader:
             print(f"🎮 正在打开 HID 设备: {self.vendor_id:04x}:{self.product_id:04x}")
 
             # 查找并打开设备
-            self.hid_device = hid.Device(self.vendor_id, self.product_id)
-            # self.hid_device.open(self.vendor_id, self.product_id)
+            # self.hid_device = hid.Device(self.vendor_id, self.product_id)
+            self.hid_device = hid.device()
+            self.hid_device.open(self.vendor_id, self.product_id)
             print(f"✅ HID设备打开成功:")
             return True
 
         except Exception as e:
             print(f"❌ HID设备初始化未知错误: {e}")
+            print(f"❌ 检查config.ini中device_name是否为你的设备")
+            with open('hid_reader_error.log', 'a') as file:
+                file.write(f"---{str(datetime.now())}\n")
+                file.write(f"HID设备初始化错误: {e}\n")
+                file.write("检查config.ini中device_name是否为你的设备\n")
+                file.write("---\n")
+            print(f"加载失败: {e}")
             return False
 
     def read_hid_data(self):
@@ -130,7 +175,17 @@ class RealHIDWebSocketReader:
 
             # 读取数据（非阻塞）
             # 大多数HID设备报告长度为64字节
-            data = self.hid_device.read(63)  # 记得改
+            if DEVICE_NAME == 'io4':
+                data = self.hid_device.read(63)
+            elif DEVICE_NAME == 'ontroller':
+
+                if idk == 1:
+                    data = self.hid_device.read(5)
+                else:
+                    data = self.hid_device.read(64)
+
+            elif DEVICE_NAME == 'nageki':
+                data = self.hid_device.read(64)  # 记得改
 
             if self.data != data:
                 self.data = data
@@ -153,14 +208,50 @@ class RealHIDWebSocketReader:
             return None
 
     def parse_hid_data(self, data):
-
         """解析输出数据，仅提取指定字段"""
-        unpacked = struct.unpack(OUTPUT_T_FORMAT, data)
-        return {
-            'rotary': tuple(unpacked[8:12]),  # 后续4个int16_t (旋转编码器)
-            'switches': tuple(unpacked[16:18]),  # 2个uint16_t (开关状态)
-            'system_status': unpacked[18]  # uint8_t (系统状态)
-        }
+        if DEVICE_NAME == 'io4':
+            unpacked = struct.unpack(OUTPUT_T_FORMAT, data)
+            return {
+                'rotary': tuple(unpacked[8:12]),  # 后续4个int16_t (旋转编码器)
+                'switches': tuple(unpacked[16:18]),  # 2个uint16_t (开关状态)
+                'system_status': unpacked[18]  # uint8_t (系统状态)
+            }
+
+        elif DEVICE_NAME == 'ontroller':
+            if idk == 0:
+                op = {
+                    "sub_pos": data[2],  # int
+                    "pos": data[1],  # int
+                    "key": f"{data[3]:08b}",  # str
+                }
+                return op
+            else:
+                binary_chars = []
+                for pos in button_positions:
+                    if data[pos] == 0x01:  # 按键按下
+                        binary_chars.append('1')
+                    else:  # 按键释放
+                        binary_chars.append('0')
+
+                op = {
+                    "sub_pos": data[22],  # int
+                    "pos": data[21],  # int
+                    "key": ''.join(binary_chars),  # str
+                }
+                return op
+
+        elif DEVICE_NAME == 'nageki':
+            b_data = bytes(data)
+            buttons, lever, scan, aimi_id, opt_button = parse_output_data(b_data)
+            button_s = ""
+            for i in range(len(buttons)):
+                button_s = button_s + str(buttons[i])
+            op = {
+                "sub_pos": lever,  # int
+                "pos": lever,  # int
+                "key": button_s,  # str
+            }
+            return op
 
     def reinitialize_hid_device(self):
         """重新初始化HID设备"""
@@ -187,17 +278,31 @@ class RealHIDWebSocketReader:
                 return False
 
             # 确保数据可以被 JSON 序列化
-            serializable_data = {
-                'type': 'hid_data',
-                'device_id': self.device_id,
-                'timestamp': time.time(),
-                'data': {
-                    'rotary': list(unpacked_data.get('rotary', (0, 0, 0, 0))),  # 转换为列表
-                    'switches': list(unpacked_data.get('switches', (0, 0))),  # 转换为列表
-                    'system_status': int(unpacked_data.get('system_status', 0))  # 确保是整数
+            if DEVICE_NAME == "io4":
+                serializable_data = {
+                    'type': 'hid_data',
+                    'device_id': self.device_id,
+                    'timestamp': time.time(),
+                    'data': {
+                        'rotary': list(unpacked_data.get('rotary', (0, 0, 0, 0))),  # 转换为列表
+                        'switches': list(unpacked_data.get('switches', (0, 0))),  # 转换为列表
+                        'system_status': int(unpacked_data.get('system_status', 0)),  # 确保是整数
+                        'DEVICE_NAME': DEVICE_NAME
+                    }
                 }
-            }
-
+            else:
+                serializable_data = {
+                    'type': 'hid_data',
+                    'device_id': self.device_id,
+                    'timestamp': time.time(),
+                    'data': {
+                        "sub_pos": unpacked_data.get('sub_pos'),  # int
+                        "pos": unpacked_data.get('pos'),  # int
+                        "key": unpacked_data.get('key'),  # str
+                        'DEVICE_NAME': DEVICE_NAME,
+                        'idk': idk
+                    }
+                }
 
             await self.websocket.send(json.dumps(serializable_data))
             print(f"📤 发送HID数据: {unpacked_data}")
@@ -233,7 +338,6 @@ class RealHIDWebSocketReader:
         if message_type == 'processing_result':
             button_key = message.get('display_events_count', 'unknown')
             print(f"图片处理列表长度     {button_key}")
-
 
     async def send_ping(self):
         """发送心跳包"""
