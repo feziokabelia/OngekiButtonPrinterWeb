@@ -4,7 +4,7 @@
 
 ### 目前支持的手台：
 IO4手台（my台，sim台等使用IO4的手台）  
-Ontrolle（dao台）  
+Ontroller（dao台）  
 Nageki  
 ### 计划中：
 1.打包 ✅  
