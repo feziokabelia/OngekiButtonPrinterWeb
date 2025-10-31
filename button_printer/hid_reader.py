@@ -4,7 +4,8 @@ import math
 import struct
 from ctypes import cdll
 from datetime import datetime
-
+from pynput import mouse
+import keyboard
 import websockets
 import json
 import time
@@ -34,6 +35,18 @@ try:
     DEVICE_NAME = str(config.get('device', 'device_name'))
     idk = int(config.get('idk', 'idk'))
     fre = float(config.get('frequency', 'fre'))
+    L_MAX = int(config.get('boundary', 'L_MAX'))
+    R_MAX = int(config.get('boundary', 'R_MAX'))
+    # 摇杆边界值设定 [L_MAX L2] [L2 L1] [L1 R1] [R1 R2] [R2 R_MAX]
+    if L_MAX < R_MAX:
+        temp = L_MAX
+        L_MAX = R_MAX
+        R_MAX = temp
+    space = math.ceil((L_MAX - R_MAX) / 5)
+    L_2 = L_MAX - space
+    L_1 = L_2 - space
+    R_1 = L_1 - space
+    R_2 = R_1 - space
     # print(idk)
     if DEVICE_NAME == 'io4':
         VENDOR_ID = 0x0CA3
@@ -44,6 +57,9 @@ try:
     elif DEVICE_NAME == 'nageki':
         VENDOR_ID = 0x2341
         PRODUCT_ID = 0x8036
+    elif DEVICE_NAME == 'yuangeki':
+        VENDOR_ID = 0
+        PRODUCT_ID = 0
     else:
         raise ValueError('device_name error or device not supported')
 
@@ -97,6 +113,8 @@ class RealHIDWebSocketReader:
             product_id: HID设备产品ID (十六进制)
             websocket_url: WebSocket服务器地址
         """
+        self.x = None
+        self.listener = None
         self.vendor_id = vendor_id
         self.product_id = product_id
         self.websocket_url = websocket_url
@@ -116,10 +134,13 @@ class RealHIDWebSocketReader:
 
         # 设备信息
         self.device_id = f"hid_{vendor_id:04x}_{product_id:04x}"
-
-        print(f"🎮 初始化 HID 设备读取器")
-        print(f"  设备: {vendor_id:04x}:{product_id:04x}")
-        print(f"  WebSocket: {websocket_url}")
+        if vendor_id == 0:
+            print(f"  初始化 HID 设备读取器")
+            print(f"  设备: {vendor_id:04x}:{product_id:04x}")
+            print(f"  WebSocket: {websocket_url}")
+        else:
+            print(f"  初始化 yuangeki 读取器")
+            print(f"  WebSocket: {websocket_url}")
 
     async def connect_to_websocket(self):
         """连接到WebSocket服务器"""
@@ -144,9 +165,18 @@ class RealHIDWebSocketReader:
             print(f"❌ WebSocket 连接失败: {e}")
             return False
 
+    def on_move(self, x):
+        self.x = (x // 10) * 10  # 防抖动
+
     def initialize_hid_device(self):
         """初始化真实HID设备"""
         try:
+            if DEVICE_NAME == 'yuangeki':
+                self.listener = mouse.Listener(on_move=self.on_move)
+                self.listener.start()
+                self.x = (L_MAX + R_MAX) / 2
+                print("成功连接 yuangeki")
+                return True
             print(f"🎮 正在打开 HID 设备: {self.vendor_id:04x}:{self.product_id:04x}")
 
             # 查找并打开设备
@@ -276,7 +306,16 @@ class RealHIDWebSocketReader:
             if not self.is_connected or not self.websocket:
                 print("⚠️ WebSocket未连接，无法发送数据")
                 return False
-
+            serializable_data = None
+            if DEVICE_NAME == 'yuangeki':
+                serializable_data = {
+                    'type': 'hid_data',
+                    'timestamp': time.time(),
+                    'data': {
+                        'x': self.x,
+                        'DEVICE_NAME': DEVICE_NAME
+                    }
+                }
             # 确保数据可以被 JSON 序列化
             if DEVICE_NAME == "io4":
                 serializable_data = {
@@ -290,7 +329,7 @@ class RealHIDWebSocketReader:
                         'DEVICE_NAME': DEVICE_NAME
                     }
                 }
-            else:
+            elif DEVICE_NAME in ('nageki', 'ontroller'):
                 serializable_data = {
                     'type': 'hid_data',
                     'device_id': self.device_id,
@@ -305,7 +344,7 @@ class RealHIDWebSocketReader:
                 }
 
             await self.websocket.send(json.dumps(serializable_data))
-            print(f"📤 发送HID数据: {unpacked_data}")
+            # print(f"📤 发送数据: {serializable_data}")
             return True
 
         except websockets.exceptions.ConnectionClosed:
@@ -322,7 +361,7 @@ class RealHIDWebSocketReader:
         try:
             async for message in self.websocket:
                 data = json.loads(message)
-                await self.handle_server_message(data)
+                # await self.handle_server_message(data)
 
         except websockets.exceptions.ConnectionClosed:
             print("❌ WebSocket连接已关闭")
@@ -334,7 +373,7 @@ class RealHIDWebSocketReader:
     async def handle_server_message(self, message):
         """处理服务器返回的消息"""
         message_type = message.get('type')
-        print("✅    处理服务器返回的消息")
+        # print("✅    处理服务器返回的消息")
         if message_type == 'processing_result':
             button_key = message.get('display_events_count', 'unknown')
             print(f"图片处理列表长度     {button_key}")
@@ -376,32 +415,32 @@ class RealHIDWebSocketReader:
             last_ping_time = time.time()
             data_count = 0
 
-            print("🎯 开始HID数据读取循环...")
-
+            print("开始数据读取循环...")
             while self.is_connected:
+
                 # 读取HID数据
-                hid_data = self.read_hid_data()
-
-                if hid_data:
-                    # 发送HID数据
-                    success = await self.send_hid_data(hid_data)
-                    if success:
-                        data_count += 1
-                        if data_count % 50 == 0:  # 每50条数据打印一次统计
-                            print(f"📊 已发送 {data_count} 条HID数据")
-
+                if DEVICE_NAME != 'yuangeki':
+                    hid_data = self.read_hid_data()
+                else:
+                    hid_data = None
+                success = await self.send_hid_data(hid_data)
+                '''
+                if success:
+                    data_count += 1
+                    if data_count % 50 == 0:  # 每50条数据打印一次统计
+                        print(f"📊 已发送 {data_count} 条HID数据")
+                print(111)
+                '''
                 # 定期发送心跳
                 current_time = time.time()
                 if current_time - last_ping_time > 30:  # 30秒一次心跳
                     await self.send_ping()
                     last_ping_time = current_time
-
                 # 控制读取频率
                 await asyncio.sleep(self.polling_interval)
 
             # 等待接收任务完成
             await receive_task
-
         except KeyboardInterrupt:
             print("\n🛑 用户中断")
         except Exception as e:
@@ -419,31 +458,6 @@ class RealHIDWebSocketReader:
 
         self.cleanup_hid_device()
         print("✅ 资源清理完成")
-
-
-def list_hid_devices():
-    """列出所有可用的HID设备"""
-    try:
-        import hid
-        print("🔍 扫描可用的HID设备...")
-
-        for device_info in hid.enumerate():
-            vendor_id = device_info['vendor_id']
-            product_id = device_info['product_id']
-            manufacturer = device_info['manufacturer_string']
-            product = device_info['product_string']
-            usage_page = device_info['usage_page']
-            usage = device_info['usage']
-
-            print(f"  {vendor_id:04x}:{product_id:04x} - {manufacturer} - {product}")
-            print(f"    Usage Page: {usage_page}, Usage: {usage}")
-            print(f"    Path: {device_info['path']}")
-            print()
-
-    except ImportError:
-        print("❌ 未找到hidapi库，无法扫描设备")
-    except Exception as e:
-        print(f"❌ 扫描设备失败: {e}")
 
 
 async def main():

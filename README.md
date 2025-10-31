@@ -3,13 +3,14 @@
 ![Assembly photo](pictures/krq6u-ovrwt.gif)
 
 ### 目前支持的手台：
-IO4手台（my台，sim台等使用IO4的手台）  
+IO4手台（my台等使用IO4的手台,sim修复中）  
 Ontroller（dao台）  
 Nageki  
+Yuangeki
 ### 计划中：
 1.打包 ✅  
 2.增加设置页面  
-3.支持源台焊台
+3.支持焊台
 ## 本地部署
 ### 环境
 Python 3.10+

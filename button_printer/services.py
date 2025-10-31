@@ -3,8 +3,10 @@ import configparser
 import math
 import os
 import sys
+import keyboard
 
 OUTPUT_T_FORMAT = '<8h 4h 2B 2B 2H 2B 29x'  # 小端字节序，2B 2B 表示 2个 coin_data_t（每个2字节）
+
 LW = "31"
 LR = "0"
 LG = "5"
@@ -14,6 +16,7 @@ RR = "1"
 RG = "16"
 RB = "15"
 RW = "14"
+
 key_map_io4 = {
     # 索引0
     0: {
@@ -60,6 +63,20 @@ key_map_na = {
     8: RW
 
 }
+
+# 键盘对应HID表
+HID2KM = {
+    '31': "s",
+    '0': "d",
+    '5': "f",
+    '4': "g",
+    '1': "h",
+    '16': "j",
+    '15': "k",
+    '14': "l",
+}
+key_states = {key: False for key in [LW, LR, LG, LB, RR, RG, RB, RW]}
+
 config = configparser.ConfigParser()
 
 
@@ -104,6 +121,91 @@ def close_swing(events):
     for i in lever_str:
         events.append({'key': i, 'visible': False, })
     return events
+
+
+def show_lever_KM(x, events):
+    result = []
+    # 显示摇杆
+    position = x  # 摇杆位置
+    pos_image = HIDService.get_pos(position)  # 摇杆位置的图片
+    sub_pos = HIDService.get_sub_position(x)
+    # print("---------------------------------------------")
+    # print(position)
+    is_l_buttons = False
+    is_r_buttons = False
+    release_button_i = 0
+    # print(LW)
+    for i in (LW, LR, LG, LB, RR, RG, RB, RW):
+        if release_button_i < 4:  # 左侧
+            if HIDService.release_button[i] == 1:
+                is_l_buttons = True
+        else:
+            if HIDService.release_button[i] == 1:
+                # print("右侧有键")
+                is_r_buttons = True
+        release_button_i = release_button_i + 1
+    last_lever_pos = HIDService.last_lever_pos
+    if HIDService.last_lever_pos != position:  # 左侧有按键则不显示摇杆 右侧同
+        events = close_swing(events)
+        if HIDService.last_lever_pos != "":
+            events.append({'key': "l_" + str(HIDService.get_pos(HIDService.last_lever_pos)), 'visible': False, })
+            events.append({'key': "r_" + str(HIDService.get_pos(HIDService.last_lever_pos)), 'visible': False, })
+        # print(f"{is_l_buttons}  {is_r_buttons}")
+        if HIDService.last_button != "":
+            events.append({'key': HIDService.last_button, 'visible': False, })
+        if is_l_buttons and is_r_buttons:  # 情况1 左右两侧都有按键
+            # print("情况1")
+            events.append({'key': "l_" + pos_image, 'visible': False, })
+            events.append({'key': "r_" + pos_image, 'visible': False, })
+            events.append({'key': pos_image, 'visible': True, })
+        else:
+            events.append({'key': "bg_swing", 'visible': False, })
+        if is_l_buttons and not is_r_buttons:  # 情况2 左侧有 右侧没有
+            # print("情况2")
+            # print("l_" + pos_image)
+            HIDService.is_show_bg_l0 = True
+            HIDService.is_left = False
+            events.append({'key': pos_image, 'visible': False, })
+            events.append({'key': "l_" + pos_image, 'visible': True, })
+            events.append({'key': "r_" + pos_image, 'visible': False, })
+        else:
+            HIDService.is_show_bg_l0 = False
+        if not is_l_buttons and is_r_buttons:  # 情况3 右侧有 左侧没有
+            # print("情况3")
+            HIDService.is_show_bg_r0 = True
+            HIDService.is_left = True
+            events.append({'key': pos_image, 'visible': False, })
+            events.append({'key': "l_" + pos_image, 'visible': False, })
+            events.append({'key': "r_" + pos_image, 'visible': True, })
+
+        else:
+            HIDService.is_show_bg_r0 = False
+        if not is_l_buttons and not is_r_buttons:  # 情况4 都没有
+            # print("情况4")
+            # print(self.is_left)
+            if HIDService.is_left:
+                # print("换右")
+                HIDService.is_show_bg_r0 = True
+                events.append({'key': pos_image, 'visible': False, })
+                events.append({'key': "r_" + pos_image, 'visible': True, })  # 换默认右
+            else:
+                # print("换左")
+                HIDService.is_show_bg_l0 = True
+                events.append({'key': pos_image, 'visible': False, })
+                events.append({'key': "l_" + pos_image, 'visible': True, })  # 换默认左
+        HIDService.last_lever_pos = position
+    elif HIDService.last_lever_pos == position:  # 摇杆不动 手放下
+        if HIDService.last_subpos == sub_pos:
+            # self.bg_item_swing.setVisible(True)
+            events.append({'key': pos_image, 'visible': True, })
+            HIDService.is_show_bg_r0 = True
+            HIDService.is_show_bg_l0 = True
+            events.append({'key': "l_" + str(HIDService.get_pos(HIDService.last_lever_pos)), 'visible': False, })
+            events.append({'key': "r_" + str(HIDService.get_pos(HIDService.last_lever_pos)), 'visible': False, })
+        HIDService.last_subpos = sub_pos
+    result.append(last_lever_pos)
+    result.append(events)
+    return result
 
 
 def show_lever(data_hid, key_data, pressed_keys, events, device_name):
@@ -237,7 +339,7 @@ def show_lever(data_hid, key_data, pressed_keys, events, device_name):
     return result
 
 
-def m_press(pressed_key, pressed_key_motion, diff1, diff2, last_lever_pos,):
+def m_press(pressed_key, pressed_key_motion, diff1, diff2, last_lever_pos, ):
     HIDService.release_button[pressed_key] = 1
     events = []
     if pressed_key in (LW, LR, LG, LB):
@@ -423,6 +525,7 @@ class HIDService:
         """
 
         #  变量
+        global LW, LR, LG, LB, RR, RG, RB, RW
         key = ''
         visible = False
         events = []
@@ -436,7 +539,7 @@ class HIDService:
         j = 0
         key_data = []
         try:
-            #  print("-------------------------services--------------------------")
+            # print("-------------------------services--------------------------")
             # print(f"🔧 直接处理结构化 HID 数据: {hid_data}")
             if hid_data.get('DEVICE_NAME') == "io4":
                 switches_data = hid_data.get('switches', (0, 0))
@@ -451,46 +554,79 @@ class HIDService:
                     # print(bits)
                     # 直接将bits字符串转为列表，并确保长度为16
                     key_data.append(list(bits[:16].ljust(16, '0')))
-            else:
+
+            elif hid_data.get('DEVICE_NAME') in ('ontroller', 'nageki'):
                 key_data = hid_data.get("key")
-            DEVICE_NAME = hid_data.get("DEVICE_NAME")
-            pressed_keys = []
-            events = []
-            # 显示摇杆
-            result = show_lever(hid_data, key_data, pressed_keys, events, DEVICE_NAME)
-            pressed_keys = result[0]
-            last_lever_pos = result[1]
-            events = result[2]
 
-            for i in (LW, LR, LG, LB, RR, RG, RW, RB):
-                current = False
-                for ind in range(len(pressed_keys)):
-                    if pressed_keys[ind] == i:
-                        # print(data_hid)
-                        current = True
-                pressed_key = str(i)
-                pressed_key_motion = pressed_key + "m"  # 手部图片
+            elif hid_data.get('DEVICE_NAME') == 'yuangeki':
 
-                # 判断是否同侧
-                diff1 = (
-                        HIDService.last_button in HIDService.left_button and pressed_key_motion
-                        in HIDService.left_button)
-                diff2 = (
-                        HIDService.last_button in HIDService.right_button and pressed_key_motion
-                        in HIDService.right_button)
+                # 安装全局钩子
+                keyboard.hook(lambda e: None)
+                last_lever_pos = show_lever_KM(hid_data.get('x'), events)
+                for key_HID in key_states:
+                    key = HID2KM.get(key_HID)  # key 键盘
+                    current_state = keyboard.is_pressed(key)
+                    if current_state != key_states[key_HID]:
+                        # print(f"key {key} current_state {current_state}")
+                        if current_state:
+                            pressed_key_motion = key_HID + "m"
 
-                if not (pressed_key in (LW, LR, LG, LB, RR, RG, RB, RW)):  # 不在这8个键不会反应
-                    continue
-                if current:  # press
-                    if HIDService.release_button[pressed_key] == 1:
+                            # print(f"按下 {key} 键，动作: {pressed_key_motion}")
+                            diff1 = (
+                                    HIDService.last_button in HIDService.left_button and pressed_key_motion in HIDService.left_button)
+                            diff2 = (
+                                    HIDService.last_button in HIDService.right_button and pressed_key_motion in HIDService.right_button)
+                            if HIDService.release_button[key_HID] == 1:
+                                return
+                            press = m_press(key_HID, pressed_key_motion, diff1, diff2, last_lever_pos)
+                            if press:
+                                events = events + press
+                        else:
+                            # print(f"释放 {key} 键")
+                            release = m_release(key_HID, key_HID + "m")
+                            if release:
+                                events = events + release
+                        key_states[key_HID] = current_state
+
+            if hid_data.get("DEVICE_NAME") != 'yuangeki':
+                DEVICE_NAME = hid_data.get("DEVICE_NAME")
+                pressed_keys = []
+                events = []
+                # 显示摇杆
+                result = show_lever(hid_data, key_data, pressed_keys, events, DEVICE_NAME)
+                pressed_keys = result[0]
+                last_lever_pos = result[1]
+                events = result[2]
+
+                for i in (LW, LR, LG, LB, RR, RG, RW, RB):
+                    current = False
+                    for ind in range(len(pressed_keys)):
+                        if pressed_keys[ind] == i:
+                            # print(data_hid)
+                            current = True
+                    pressed_key = str(i)
+                    pressed_key_motion = pressed_key + "m"  # 手部图片
+
+                    # 判断是否同侧
+                    diff1 = (
+                            HIDService.last_button in HIDService.left_button and pressed_key_motion
+                            in HIDService.left_button)
+                    diff2 = (
+                            HIDService.last_button in HIDService.right_button and pressed_key_motion
+                            in HIDService.right_button)
+
+                    if not (pressed_key in (LW, LR, LG, LB, RR, RG, RB, RW)):  # 不在这8个键不会反应
                         continue
-                    press = m_press(pressed_key, pressed_key_motion, diff1, diff2, last_lever_pos)
-                    if press:
-                        events = events + press
-                else:  # release
-                    release = m_release(pressed_key, pressed_key_motion,)
-                    if release:
-                        events = events + release
+                    if current:  # press
+                        if HIDService.release_button[pressed_key] == 1:
+                            continue
+                        press = m_press(pressed_key, pressed_key_motion, diff1, diff2, last_lever_pos)
+                        if press:
+                            events = events + press
+                    else:  # release
+                        release = m_release(pressed_key, pressed_key_motion, )
+                        if release:
+                            events = events + release
 
             # 判断左边右边分别有多少按键
             for i in HIDService.release_button.keys():
