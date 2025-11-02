@@ -32,6 +32,22 @@ key_map_io4 = {
         9: RW  # 右侧
     }
 }
+key_map_sim = {
+    # 索引0
+    0: {
+        6: LR,
+        5: LG,
+        4: LB,
+        1: RR,
+        0: RG,
+        3: RW
+    },
+    # 索引1
+    1: {
+        6: LW,
+        7: RB,
+    }
+}
 key_map_o = {
     7: LR,
     6: LG,
@@ -123,12 +139,12 @@ def close_swing(events):
     return events
 
 
-def show_lever_KM(x, events):
+def show_lever_KM(x, events, device_name):
     result = []
     # 显示摇杆
     position = x  # 摇杆位置
     pos_image = HIDService.get_pos(position)  # 摇杆位置的图片
-    sub_pos = HIDService.get_sub_position(x)
+    sub_pos = HIDService.get_sub_position(x, device_name)
     # print("---------------------------------------------")
     # print(position)
     is_l_buttons = False
@@ -214,7 +230,7 @@ def show_lever(data_hid, key_data, pressed_keys, events, device_name):
     if device_name == "io4":
         position = data_hid.get('rotary')[1]
         pos_image = HIDService.get_pos(position)
-        sub_pos = HIDService.get_sub_position(data_hid.get('rotary')[0])
+        sub_pos = HIDService.get_sub_position(data_hid.get('rotary')[0], device_name)
         key_map = key_map_io4
         # print(sub_pos)
     else:
@@ -226,9 +242,11 @@ def show_lever(data_hid, key_data, pressed_keys, events, device_name):
                 key_map = key_map_o
             else:
                 key_map = key_map_o_idk
+        if device_name == "simgeki":
+            key_map = key_map_sim
         position = data_hid.get("pos")  # 摇杆位置
         pos_image = HIDService.get_pos(position)
-        sub_pos = HIDService.get_sub_position(data_hid.get("sub_pos"))
+        sub_pos = HIDService.get_sub_position(data_hid.get("sub_pos"), device_name)
         # print(sub_pos)
 
     is_l_buttons = False
@@ -304,6 +322,7 @@ def show_lever(data_hid, key_data, pressed_keys, events, device_name):
         HIDService.last_subpos = sub_pos
     # print("l_" + pos_image)
     if device_name == "io4":
+
         for switch_idx in range(2):  # 遍历左/右开关
             for bit_pos in range(16):  # 检查每一位
                 new_state = int(key_data[switch_idx][bit_pos])  # 注意：bits[0]是MSB（Bit15）
@@ -325,6 +344,27 @@ def show_lever(data_hid, key_data, pressed_keys, events, device_name):
                                 pressed_keys.append(key_map_r.get(i))
         if data_hid.get('system_status', 0) == 0:
             pressed_keys.append(LW)
+    elif device_name == "simgeki":
+        key_data_list = [list(s) for s in key_data]
+        for switch_idx in range(2):  # 遍历左/右开关
+            for bit_pos in range(8):  # 检查每一位
+                new_state = int(key_data_list[switch_idx][bit_pos])  # 注意：bits[0]是MSB（Bit15）
+                if (switch_idx == 0 and bit_pos == 3) or (switch_idx == 1 and bit_pos == 6):  # 特殊处理RW LW
+                    if new_state == 0:
+                        new_state = 1
+                    else:
+                        new_state = 0
+                if new_state == 1:
+                    if switch_idx == 0:
+                        key_map_l = key_map.get(switch_idx)
+                        for i in key_map_l.keys():
+                            if bit_pos == i:
+                                pressed_keys.append(key_map_l.get(i))
+                    else:
+                        key_map_r = key_map.get(switch_idx)
+                        for i in key_map_r.keys():
+                            if bit_pos == i:
+                                pressed_keys.append(key_map_r.get(i))
     else:
         for bit_pos in range(len(key_data)):  # 检查每一位
             new_state = int(key_data[bit_pos])
@@ -543,8 +583,6 @@ class HIDService:
             # print(f"🔧 直接处理结构化 HID 数据: {hid_data}")
             if hid_data.get('DEVICE_NAME') == "io4":
                 switches_data = hid_data.get('switches', (0, 0))
-                rotary_data = hid_data.get('rotary', (0, 0, 0, 0))
-                system_status = hid_data.get('system_status', 0)
                 switches_str = [f"0b{s:016b}" for s in switches_data]
                 # binary_switches = HIDService.switches_to_binary_strings(switches_str)
                 # print(f"🎮 设备状态 - 开关: {switches_str}, 旋钮: {rotary_data}, 系统: {system_status}")
@@ -555,14 +593,14 @@ class HIDService:
                     # 直接将bits字符串转为列表，并确保长度为16
                     key_data.append(list(bits[:16].ljust(16, '0')))
 
-            elif hid_data.get('DEVICE_NAME') in ('ontroller', 'nageki'):
+            elif hid_data.get('DEVICE_NAME') in ('ontroller', 'nageki', 'simgeki'):
                 key_data = hid_data.get("key")
 
             elif hid_data.get('DEVICE_NAME') == 'yuangeki':
-
+                DEVICE_NAME = hid_data.get("DEVICE_NAME")
                 # 安装全局钩子
                 keyboard.hook(lambda e: None)
-                last_lever_pos = show_lever_KM(hid_data.get('x'), events)
+                last_lever_pos = show_lever_KM(hid_data.get('x'), events, DEVICE_NAME)
                 for key_HID in key_states:
                     key = HID2KM.get(key_HID)  # key 键盘
                     current_state = keyboard.is_pressed(key)
@@ -674,10 +712,15 @@ class HIDService:
         return KEY_MAPPING.get((byte_index, bit_position))
 
     @staticmethod
-    def get_sub_position(rotary0):
-        total_range = 255
-        sub_range_size = total_range / 20  # 3276.8
-        sub_pos = int(rotary0 // sub_range_size)  # 映射到0~19
+    def get_sub_position(rotary0, device_name):
+        if device_name == 'io4':
+            total_range = 65536  # 32768 - (-32768)
+            sub_range_size = total_range / 20  # 3276.8
+            sub_pos = int((rotary0 + 32768) // sub_range_size)  # 映射到0~19
+        else:
+            total_range = 255
+            sub_range_size = total_range / 20
+            sub_pos = int(rotary0 // sub_range_size)  # 映射到0~19
         return min(max(sub_pos, 0), 19)  # 限制在0~19
 
     @staticmethod

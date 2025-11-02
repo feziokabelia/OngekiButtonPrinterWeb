@@ -2,6 +2,7 @@ import asyncio
 import configparser
 import math
 import struct
+import traceback
 from ctypes import cdll
 from datetime import datetime
 from pynput import mouse
@@ -60,6 +61,9 @@ try:
     elif DEVICE_NAME == 'yuangeki':
         VENDOR_ID = 0
         PRODUCT_ID = 0
+    elif DEVICE_NAME == 'simgeki':
+        VENDOR_ID = 0x0CA3
+        PRODUCT_ID = 0x0021
     else:
         raise ValueError('device_name error or device not supported')
 
@@ -89,6 +93,8 @@ except Exception as e:
     sys.exit()
 OUTPUT_T_FORMAT = '<8h 4h 2B 2B 2H 2B 29x'  # 小端字节序，2B 2B 表示 2个 coin_data_t（每个2字节）
 button_positions = [11, 12, 13, 14, 15, 16, 17, 18]  # 左侧→右侧
+SIM_SYMBOL = 0x00
+SIM_COMMAND = 0xE1
 
 
 def parse_output_data(data):
@@ -165,8 +171,33 @@ class RealHIDWebSocketReader:
             print(f"❌ WebSocket 连接失败: {e}")
             return False
 
+    def send_command(self, symbol, command, payload=None):
+        """发送HID配置命令"""
+        if payload is None:
+            payload = []
+        cmd = [0xAA, symbol, command, 0x00] + payload
+        cmd = cmd + [0x00] * (64 - len(cmd))
+        self.hid_device.write(cmd)
+        time.sleep(0.1)
+        return self.hid_device.read(64)
+
     def on_move(self, x):
         self.x = (x // 10) * 10  # 防抖动
+
+    def read_single_input_data_full(self):
+        """读取单次特殊输入数据并显示完整响应"""
+        response = self.send_command(0x00, 0xE1)  # SP_INPUT_GET
+        if response:
+            # print("=== 完整响应数据 ===")
+            # print(f"数据长度: {len(response)} 字节")
+            # hex_data = [f"0x{b:02X}" for b in response]
+            # print("十六进制:", ' '.join(hex_data))
+
+            # print(f"response   {response}")
+            return response
+        else:
+            print("无响应数据")
+            return None
 
     def initialize_hid_device(self):
         """初始化真实HID设备"""
@@ -215,7 +246,10 @@ class RealHIDWebSocketReader:
                     data = self.hid_device.read(64)
 
             elif DEVICE_NAME == 'nageki':
-                data = self.hid_device.read(64)  # 记得改
+                data = self.hid_device.read(64)
+            elif DEVICE_NAME == 'simgeki':
+                data = self.read_single_input_data_full()
+                # print(data)
 
             if self.data != data:
                 self.data = data
@@ -226,6 +260,7 @@ class RealHIDWebSocketReader:
 
                     # 解析数据
                     unpacked_data = self.parse_hid_data(bytes(data))
+                    # print(f"解析数据unpacked_data {unpacked_data}")
                     return unpacked_data
                 else:
                     # 没有数据可用是正常的（非阻塞模式）
@@ -282,6 +317,19 @@ class RealHIDWebSocketReader:
                 "key": button_s,  # str
             }
             return op
+        elif DEVICE_NAME == 'simgeki':
+            byte6 = data[6]
+            byte7 = data[7]
+            binary_6 = format(byte6, '08b')
+            binary_7 = format(byte7, '08b')
+
+            op = {
+                "sub_pos": data[4],  # int
+                "pos": data[5],  # int
+                "key": [binary_6, binary_7],  # list
+            }
+            # print(f"op {op}")
+            return op
 
     def reinitialize_hid_device(self):
         """重新初始化HID设备"""
@@ -329,7 +377,7 @@ class RealHIDWebSocketReader:
                         'DEVICE_NAME': DEVICE_NAME
                     }
                 }
-            elif DEVICE_NAME in ('nageki', 'ontroller'):
+            elif DEVICE_NAME in ('nageki', 'ontroller', 'simgeki'):
                 serializable_data = {
                     'type': 'hid_data',
                     'device_id': self.device_id,
@@ -344,7 +392,7 @@ class RealHIDWebSocketReader:
                 }
 
             await self.websocket.send(json.dumps(serializable_data))
-            # print(f"📤 发送数据: {serializable_data}")
+            print(f"📤 发送数据: {serializable_data}")
             return True
 
         except websockets.exceptions.ConnectionClosed:
@@ -353,6 +401,11 @@ class RealHIDWebSocketReader:
             return False
         except Exception as e:
             print(f"❌ 发送HID数据失败: {e}")
+            exc_type, exc_value, exc_traceback = sys.exc_info()
+            print(f"错误类型: {exc_type}")
+            print(f"错误信息: {exc_value}")
+            print("异常跟踪:")
+            traceback.print_tb(exc_traceback)
             self.is_connected = False
             return False
 
@@ -423,7 +476,8 @@ class RealHIDWebSocketReader:
                     hid_data = self.read_hid_data()
                 else:
                     hid_data = None
-                success = await self.send_hid_data(hid_data)
+                if hid_data:
+                    success = await self.send_hid_data(hid_data)
                 '''
                 if success:
                     data_count += 1
