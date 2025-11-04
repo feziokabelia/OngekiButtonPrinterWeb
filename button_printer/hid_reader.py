@@ -92,9 +92,20 @@ except Exception as e:
     print(f"加载失败: {e}")
     sys.exit()
 OUTPUT_T_FORMAT = '<8h 4h 2B 2B 2H 2B 29x'  # 小端字节序，2B 2B 表示 2个 coin_data_t（每个2字节）
+OUTPUT_T_FORMAT_sim = '<B 8H 4H 2B 2B 4B 2B 29x'  # 小端字节序
 button_positions = [11, 12, 13, 14, 15, 16, 17, 18]  # 左侧→右侧
 SIM_SYMBOL = 0x00
-SIM_COMMAND = 0xE1
+
+
+def parse_output_sim(data: bytes):
+    unpacked = struct.unpack(OUTPUT_T_FORMAT, data)
+    return {
+        'analog': unpacked[:8],
+        'rotary': unpacked[8:12],
+        'switches': unpacked[16:18],
+        'system_status': unpacked[18],
+        'usb_status': unpacked[19],
+    }
 
 
 def parse_output_data(data):
@@ -107,6 +118,27 @@ def parse_output_data(data):
     aimi_id = unpacked[12:22]
     opt_button = unpacked[22]
     return buttons, lever, scan, aimi_id, opt_button
+
+
+def find_device_path(interface_number=4):
+    """动态查找设备路径"""
+
+    devices = hid.enumerate()
+
+    target_devices = []
+
+    for device in devices:
+        # 匹配VID、PID和接口号
+        if (device['vendor_id'] == VENDOR_ID and
+                device['product_id'] == PRODUCT_ID and
+                device['interface_number'] == interface_number):
+            target_devices.append(device)
+
+    if len(target_devices) == 1:
+        device_info = target_devices[0]
+        return device_info['path']
+    else:
+        raise KeyError('具有多个相同vid pid interface_number=4 的设备')
 
 
 class RealHIDWebSocketReader:
@@ -140,7 +172,7 @@ class RealHIDWebSocketReader:
 
         # 设备信息
         self.device_id = f"hid_{vendor_id:04x}_{product_id:04x}"
-        if vendor_id == 0:
+        if vendor_id != 0:
             print(f"  初始化 HID 设备读取器")
             print(f"  设备: {vendor_id:04x}:{product_id:04x}")
             print(f"  WebSocket: {websocket_url}")
@@ -171,33 +203,9 @@ class RealHIDWebSocketReader:
             print(f"❌ WebSocket 连接失败: {e}")
             return False
 
-    def send_command(self, symbol, command, payload=None):
-        """发送HID配置命令"""
-        if payload is None:
-            payload = []
-        cmd = [0xAA, symbol, command, 0x00] + payload
-        cmd = cmd + [0x00] * (64 - len(cmd))
-        self.hid_device.write(cmd)
-        time.sleep(0.1)
-        return self.hid_device.read(64)
-
     def on_move(self, x):
         self.x = (x // 10) * 10  # 防抖动
 
-    def read_single_input_data_full(self):
-        """读取单次特殊输入数据并显示完整响应"""
-        response = self.send_command(0x00, 0xE1)  # SP_INPUT_GET
-        if response:
-            # print("=== 完整响应数据 ===")
-            # print(f"数据长度: {len(response)} 字节")
-            # hex_data = [f"0x{b:02X}" for b in response]
-            # print("十六进制:", ' '.join(hex_data))
-
-            # print(f"response   {response}")
-            return response
-        else:
-            print("无响应数据")
-            return None
 
     def initialize_hid_device(self):
         """初始化真实HID设备"""
@@ -213,7 +221,11 @@ class RealHIDWebSocketReader:
             # 查找并打开设备
             # self.hid_device = hid.Device(self.vendor_id, self.product_id)
             self.hid_device = hid.device()
-            self.hid_device.open(self.vendor_id, self.product_id)
+            if DEVICE_NAME == 'simgeki':
+                device_path = find_device_path()
+                self.hid_device.open_path(device_path)
+            else:
+                self.hid_device.open(self.vendor_id, self.product_id)
             print(f"✅ HID设备打开成功:")
             return True
 
@@ -248,7 +260,7 @@ class RealHIDWebSocketReader:
             elif DEVICE_NAME == 'nageki':
                 data = self.hid_device.read(64)
             elif DEVICE_NAME == 'simgeki':
-                data = self.read_single_input_data_full()
+                data = self.hid_device.read(63)
                 # print(data)
 
             if self.data != data:
@@ -318,15 +330,17 @@ class RealHIDWebSocketReader:
             }
             return op
         elif DEVICE_NAME == 'simgeki':
-            byte6 = data[6]
-            byte7 = data[7]
-            binary_6 = format(byte6, '08b')
-            binary_7 = format(byte7, '08b')
-
+            # current_data = parse_output_sim(bytes(data))
+            key_list = []
+            sw1 = f"0b{data[29] * 2 ** 8:016b}"
+            sw2 = f"0b{data[31]:08b}{data[30]:08b}"
+            key_list.append(sw1)
+            key_list.append(sw2)
+            rotary = [data[1], data[2], 0, 0]
             op = {
-                "sub_pos": data[4],  # int
-                "pos": data[5],  # int
-                "key": [binary_6, binary_7],  # list
+                'rotary': tuple(rotary),  # 后续4个int16_t (旋转编码器)
+                'switches': key_list,  # list
+                'system_status': data[32]  # uint8_t (系统状态)
             }
             # print(f"op {op}")
             return op
@@ -377,7 +391,19 @@ class RealHIDWebSocketReader:
                         'DEVICE_NAME': DEVICE_NAME
                     }
                 }
-            elif DEVICE_NAME in ('nageki', 'ontroller', 'simgeki'):
+            elif DEVICE_NAME == "simgeki":
+                serializable_data = {
+                    'type': 'hid_data',
+                    'device_id': self.device_id,
+                    'timestamp': time.time(),
+                    'data': {
+                        'rotary': list(unpacked_data.get('rotary', (0, 0, 0, 0))),  # 转换为列表
+                        'switches': list(unpacked_data.get('switches', (0, 0))),  # 转换为列表
+                        'system_status': int(unpacked_data.get('system_status', 0)),  # 确保是整数
+                        'DEVICE_NAME': DEVICE_NAME
+                    }
+                }
+            elif DEVICE_NAME in ('nageki', 'ontroller'):
                 serializable_data = {
                     'type': 'hid_data',
                     'device_id': self.device_id,

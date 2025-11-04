@@ -227,7 +227,7 @@ def show_lever_KM(x, events, device_name):
 def show_lever(data_hid, key_data, pressed_keys, events, device_name):
     result = []
     # 显示摇杆
-    if device_name == "io4":
+    if device_name in ("io4", "simgeki"):
         position = data_hid.get('rotary')[1]
         pos_image = HIDService.get_pos(position)
         sub_pos = HIDService.get_sub_position(data_hid.get('rotary')[0], device_name)
@@ -242,8 +242,7 @@ def show_lever(data_hid, key_data, pressed_keys, events, device_name):
                 key_map = key_map_o
             else:
                 key_map = key_map_o_idk
-        if device_name == "simgeki":
-            key_map = key_map_sim
+
         position = data_hid.get("pos")  # 摇杆位置
         pos_image = HIDService.get_pos(position)
         sub_pos = HIDService.get_sub_position(data_hid.get("sub_pos"), device_name)
@@ -321,7 +320,7 @@ def show_lever(data_hid, key_data, pressed_keys, events, device_name):
             events.append({'key': "r_" + str(HIDService.get_pos(HIDService.last_lever_pos)), 'visible': False, })
         HIDService.last_subpos = sub_pos
     # print("l_" + pos_image)
-    if device_name == "io4":
+    if device_name in ("io4", "simgeki"):
 
         for switch_idx in range(2):  # 遍历左/右开关
             for bit_pos in range(16):  # 检查每一位
@@ -344,7 +343,8 @@ def show_lever(data_hid, key_data, pressed_keys, events, device_name):
                                 pressed_keys.append(key_map_r.get(i))
         if data_hid.get('system_status', 0) == 0:
             pressed_keys.append(LW)
-    elif device_name == "simgeki":
+
+    elif device_name == "simgeki2":
         key_data_list = [list(s) for s in key_data]
         for switch_idx in range(2):  # 遍历左/右开关
             for bit_pos in range(8):  # 检查每一位
@@ -365,6 +365,7 @@ def show_lever(data_hid, key_data, pressed_keys, events, device_name):
                         for i in key_map_r.keys():
                             if bit_pos == i:
                                 pressed_keys.append(key_map_r.get(i))
+
     else:
         for bit_pos in range(len(key_data)):  # 检查每一位
             new_state = int(key_data[bit_pos])
@@ -581,9 +582,12 @@ class HIDService:
         try:
             # print("-------------------------services--------------------------")
             # print(f"🔧 直接处理结构化 HID 数据: {hid_data}")
-            if hid_data.get('DEVICE_NAME') == "io4":
+            if hid_data.get('DEVICE_NAME') in ("io4", 'simgeki'):
                 switches_data = hid_data.get('switches', (0, 0))
-                switches_str = [f"0b{s:016b}" for s in switches_data]
+                if hid_data.get('DEVICE_NAME') == "io4":
+                    switches_str = [f"0b{s:016b}" for s in switches_data]
+                else:
+                    switches_str = switches_data
                 # binary_switches = HIDService.switches_to_binary_strings(switches_str)
                 # print(f"🎮 设备状态 - 开关: {switches_str}, 旋钮: {rotary_data}, 系统: {system_status}")
                 # 直接分析 switches 数据的二进制位
@@ -593,7 +597,7 @@ class HIDService:
                     # 直接将bits字符串转为列表，并确保长度为16
                     key_data.append(list(bits[:16].ljust(16, '0')))
 
-            elif hid_data.get('DEVICE_NAME') in ('ontroller', 'nageki', 'simgeki'):
+            elif hid_data.get('DEVICE_NAME') in ('ontroller', 'nageki'):
                 key_data = hid_data.get("key")
 
             elif hid_data.get('DEVICE_NAME') == 'yuangeki':
@@ -689,27 +693,6 @@ class HIDService:
             import traceback
             traceback.print_exc()
             return []
-
-    @staticmethod
-    def _get_key_mapping(byte_index, bit_position):
-        """
-        根据字节索引和位位置返回对应的按键名称
-        这里需要你根据设备协议填写正确的映射
-        """
-        KEY_MAPPING = {
-
-            LR: 'S',
-            LG: 'A',
-            LB: 'D',
-            RR: 'W',
-            RG: 'Space',
-            RB: 'Enter',
-            LW: 'Shift',
-            RW: 'Ctrl',
-
-        }
-
-        return KEY_MAPPING.get((byte_index, bit_position))
 
     @staticmethod
     def get_sub_position(rotary0, device_name):
