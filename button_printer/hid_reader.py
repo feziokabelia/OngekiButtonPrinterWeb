@@ -131,7 +131,9 @@ def find_device_path(interface_number=4):
         # 匹配VID、PID和接口号
         if (device['vendor_id'] == VENDOR_ID and
                 device['product_id'] == PRODUCT_ID and
-                device['interface_number'] == interface_number):
+                device['interface_number'] == interface_number and
+                device['usage'] == 4 ):
+
             target_devices.append(device)
 
     if len(target_devices) == 1:
@@ -378,6 +380,7 @@ class RealHIDWebSocketReader:
                         'DEVICE_NAME': DEVICE_NAME
                     }
                 }
+                print('serializable_data')
             # 确保数据可以被 JSON 序列化
             if DEVICE_NAME == "io4":
                 serializable_data = {
@@ -418,7 +421,7 @@ class RealHIDWebSocketReader:
                 }
 
             await self.websocket.send(json.dumps(serializable_data))
-            print(f"📤 发送数据: {serializable_data}")
+            # print(f"📤 发送数据: {serializable_data}")
             return True
 
         except websockets.exceptions.ConnectionClosed:
@@ -502,6 +505,7 @@ class RealHIDWebSocketReader:
                     hid_data = self.read_hid_data()
                 else:
                     hid_data = None
+                    success = await self.send_hid_data(hid_data)
                 if hid_data:
                     success = await self.send_hid_data(hid_data)
                 '''
