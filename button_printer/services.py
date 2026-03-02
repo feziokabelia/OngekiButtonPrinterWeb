@@ -709,7 +709,7 @@ class HIDService:
     @staticmethod
     def get_pos(position):
         pos_image = ""
-        if L_MAX + 20 > position >= L_2:
+        if position >= L_2:
             pos_image = "lever_-2"
         if L_2 > position >= L_1:
             pos_image = "lever_-1"
@@ -717,7 +717,7 @@ class HIDService:
             pos_image = "lever_0"
         if R_1 > position >= R_2:
             pos_image = "lever_1"
-        if R_2 > position > R_MAX - 20:
+        if R_2 > position:
             pos_image = "lever_2"
         return pos_image
 
