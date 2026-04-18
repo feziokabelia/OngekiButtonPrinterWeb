@@ -117,7 +117,11 @@ try:
     config.read(config_path)
     L_MAX = int(config.get('boundary', 'L_MAX'))
     R_MAX = int(config.get('boundary', 'R_MAX'))
+    N_FLAG = int(config.get('boundary', 'N_FLAG'))
     # 摇杆边界值设定 [L_MAX L2] [L2 L1] [L1 R1] [R1 R2] [R2 R_MAX]
+    if N_FLAG == 1:
+        L_MAX = -abs(L_MAX)
+        R_MAX = -abs(R_MAX)
     if L_MAX < R_MAX:
         temp = L_MAX
         L_MAX = R_MAX

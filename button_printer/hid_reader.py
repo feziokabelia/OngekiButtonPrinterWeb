@@ -15,6 +15,9 @@ import os
 
 config = configparser.ConfigParser()
 
+print("hid_reader 启动！")
+print("version --1.3.1")
+
 
 # 获取exe所在目录的路径
 def get_exe_dir():
@@ -38,6 +41,7 @@ try:
     fre = float(config.get('frequency', 'fre'))
     L_MAX = int(config.get('boundary', 'L_MAX'))
     R_MAX = int(config.get('boundary', 'R_MAX'))
+    N_FLAG = int(config.get('boundary', 'N_FLAG'))
     # 摇杆边界值设定 [L_MAX L2] [L2 L1] [L1 R1] [R1 R2] [R2 R_MAX]
     if L_MAX < R_MAX:
         temp = L_MAX
@@ -64,6 +68,9 @@ try:
     elif DEVICE_NAME == 'simgeki':
         VENDOR_ID = 0x0CA3
         PRODUCT_ID = 0x0021
+    elif DEVICE_NAME == 'nyageki':
+        VENDOR_ID = 0x2341
+        PRODUCT_ID = 0x8036
     else:
         raise ValueError('device_name error or device not supported')
 
@@ -131,16 +138,18 @@ def find_device_path(interface_number=4):
         # 匹配VID、PID和接口号
         if (device['vendor_id'] == VENDOR_ID and
                 device['product_id'] == PRODUCT_ID and
-                device['interface_number'] == interface_number and
-                device['usage'] == 4 ):
-
+                (
+                    (device['interface_number'] == interface_number and device['usage'] == 4) or
+                    (device['usage'] == 3072)  # nyageki
+                )
+        ):
             target_devices.append(device)
 
     if len(target_devices) == 1:
         device_info = target_devices[0]
         return device_info['path']
     else:
-        raise KeyError('具有多个相同vid pid interface_number=4 的设备')
+        raise KeyError('具有多个相同vid pid interface_number=4 或者 usage == 3072的设备')
 
 
 class RealHIDWebSocketReader:
@@ -208,7 +217,6 @@ class RealHIDWebSocketReader:
     def on_move(self, x):
         self.x = (x // 10) * 10  # 防抖动
 
-
     def initialize_hid_device(self):
         """初始化真实HID设备"""
         try:
@@ -222,12 +230,22 @@ class RealHIDWebSocketReader:
 
             # 查找并打开设备
             # self.hid_device = hid.Device(self.vendor_id, self.product_id)
-            self.hid_device = hid.device()
-            if DEVICE_NAME == 'simgeki':
+            try:
+                self.hid_device = hid.Device(self.vendor_id, self.product_id)
+            except:
+                self.hid_device = hid.device()
+            if DEVICE_NAME == 'simgeki' or DEVICE_NAME == 'nyageki':
                 device_path = find_device_path()
-                self.hid_device.open_path(device_path)
+                try:
+                    self.hid_device.open_path(device_path)
+                except:
+                    self.hid_device = hid.Device(path=device_path)
             else:
-                self.hid_device.open(self.vendor_id, self.product_id)
+                try:
+                    self.hid_device.open(self.vendor_id, self.product_id)
+                except:
+                    pass
+
             print(f"✅ HID设备打开成功:")
             return True
 
@@ -247,7 +265,7 @@ class RealHIDWebSocketReader:
         try:
             if not self.hid_device:
                 return None
-
+            data = None
             # 读取数据（非阻塞）
             # 大多数HID设备报告长度为64字节
             if DEVICE_NAME == 'io4':
@@ -260,6 +278,8 @@ class RealHIDWebSocketReader:
                     data = self.hid_device.read(64)
 
             elif DEVICE_NAME == 'nageki':
+                data = self.hid_device.read(64)
+            elif DEVICE_NAME == 'nyageki':
                 data = self.hid_device.read(64)
             elif DEVICE_NAME == 'simgeki':
                 data = self.hid_device.read(63)
@@ -319,7 +339,7 @@ class RealHIDWebSocketReader:
                 }
                 return op
 
-        elif DEVICE_NAME == 'nageki':
+        elif DEVICE_NAME == 'nageki' or DEVICE_NAME == 'nyageki':
             b_data = bytes(data)
             buttons, lever, scan, aimi_id, opt_button = parse_output_data(b_data)
             button_s = ""
@@ -380,7 +400,6 @@ class RealHIDWebSocketReader:
                         'DEVICE_NAME': DEVICE_NAME
                     }
                 }
-                print('serializable_data')
             # 确保数据可以被 JSON 序列化
             if DEVICE_NAME == "io4":
                 serializable_data = {
@@ -406,16 +425,24 @@ class RealHIDWebSocketReader:
                         'DEVICE_NAME': DEVICE_NAME
                     }
                 }
-            elif DEVICE_NAME in ('nageki', 'ontroller'):
+            elif DEVICE_NAME in ('nageki', 'ontroller', 'nyageki'):
+                if DEVICE_NAME == 'nyageki':
+                    device_name = 'nageki'
+                else:
+                    device_name = DEVICE_NAME
+                if N_FLAG == 1:
+                    pos = -abs(unpacked_data.get('pos'))
+                else:
+                    pos = unpacked_data.get('pos')
                 serializable_data = {
                     'type': 'hid_data',
                     'device_id': self.device_id,
                     'timestamp': time.time(),
                     'data': {
                         "sub_pos": unpacked_data.get('sub_pos'),  # int
-                        "pos": unpacked_data.get('pos'),  # int
+                        "pos": pos,  # int
                         "key": unpacked_data.get('key'),  # str
-                        'DEVICE_NAME': DEVICE_NAME,
+                        'DEVICE_NAME': device_name,
                         'idk': idk
                     }
                 }

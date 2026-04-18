@@ -7,6 +7,7 @@ IO4手台（my台,sim台等使用IO4的手台）
 Ontroller（dao台）  
 Nageki  
 Yuangeki
+Nyageki
 ### 计划中：
 1.打包 ✅  
 2.增加设置页面  

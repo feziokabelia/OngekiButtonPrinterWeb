@@ -38,7 +38,7 @@ try:
     elif DEVICE_NAME == 'ontroller':
         VENDOR_ID = 0x0E8F
         PRODUCT_ID = 0x1002
-    elif DEVICE_NAME == 'nageki':
+    elif DEVICE_NAME == 'nageki' or 'nyageki':
         VENDOR_ID = 0x2341
         PRODUCT_ID = 0x8036
     else:
@@ -84,12 +84,39 @@ output_count = 0
 last_Analog = [0, 0]
 
 
+def find_device_path(interface_number=4):
+    """动态查找设备路径"""
+
+    devices = hid.enumerate()
+
+    target_devices = []
+
+    for device in devices:
+        # 匹配VID、PID和接口号
+        if (device['vendor_id'] == VENDOR_ID and
+                device['product_id'] == PRODUCT_ID and
+                (
+                        (device['interface_number'] == interface_number and device['usage'] == 4) or
+                        (device['usage'] == 3072)  # nyageki
+                )
+        ):
+            target_devices.append(device)
+
+    if len(target_devices) == 1:
+        device_info = target_devices[0]
+        return device_info['path']
+    else:
+        raise KeyError('具有多个相同vid pid interface_number=4 或者 usage == 3072的设备')
+
+
 def read_hid_device():
     global output_count
     last_data = None  # 缓存上一次的数据
-    # device = hid.Device(VENDOR_ID, PRODUCT_ID)
-    device = hid.device()
-    device.open(VENDOR_ID, PRODUCT_ID)
+    try:
+        device = hid.Device(VENDOR_ID, PRODUCT_ID)
+    except:
+        device = hid.device()
+        device.open(VENDOR_ID, PRODUCT_ID)
     while True:
         data = device.read(STRUCT_SIZE)
         if not data:
@@ -187,12 +214,20 @@ def detect_packet_size():
 def monitor_hid_device():
     # 打开设备
     last_data = None
-    try:
-        device = hid.device()
-        device.open(VENDOR_ID, PRODUCT_ID)
-        print(f"设备已连接: {device.get_product_string()}")
-    except Exception as e:
-        device = hid.Device(VENDOR_ID, PRODUCT_ID)
+    if DEVICE_NAME == 'nyageki':
+        try:
+            device_path = find_device_path()
+            device = hid.Device(path=device_path)
+        except:
+            device = hid.device()
+            device.open(VENDOR_ID, PRODUCT_ID)
+    else:
+        try:
+            device = hid.device()
+            device.open(VENDOR_ID, PRODUCT_ID)
+        except:
+            device = hid.Device(VENDOR_ID, PRODUCT_ID)
+    print(f"设备已连接: {device.get_product_string()}")
 
     try:
         while True:
@@ -272,6 +307,5 @@ if __name__ == "__main__":
         else:
             idk_ontroller_lever_detect()
 
-    elif DEVICE_NAME == "nageki":
+    elif DEVICE_NAME == "nageki" or "nyageki":
         nageki_lever_detect()
-
