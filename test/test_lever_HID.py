@@ -126,7 +126,10 @@ def read_hid_device():
 
         # 仅当数据变化时输出
         if data_changed(last_data, current_data):
-            print(f"{current_data['rotary'][1]}")
+            if current_data['rotary'] != (0, 0, 0, 0):
+                print(f"{current_data['rotary'][1]}")
+            else:
+                print(f"{current_data['analog'][1]}")
             last_data = current_data  # 更新缓存
 
 
@@ -227,7 +230,7 @@ def monitor_hid_device():
             device.open(VENDOR_ID, PRODUCT_ID)
         except:
             device = hid.Device(VENDOR_ID, PRODUCT_ID)
-    print(f"设备已连接: {device.get_product_string()}")
+    print(f"设备已连接")
 
     try:
         while True:

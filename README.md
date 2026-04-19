@@ -3,7 +3,7 @@
 ![Assembly photo](pictures/krq6u-ovrwt.gif)
 
 ### 目前支持的手台：
-IO4手台（my台,sim台等使用IO4的手台）  
+IO4手台（my台,sim台,彩虹台等使用IO4的手台）  
 Ontroller（dao台）  
 Nageki  
 Yuangeki

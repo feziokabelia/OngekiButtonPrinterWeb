@@ -310,8 +310,11 @@ class RealHIDWebSocketReader:
         """解析输出数据，仅提取指定字段"""
         if DEVICE_NAME == 'io4':
             unpacked = struct.unpack(OUTPUT_T_FORMAT, data)
+            lever = tuple(unpacked[8:12])
+            if lever == (0, 0, 0, 0):
+                lever = tuple(unpacked[:8])
             return {
-                'rotary': tuple(unpacked[8:12]),  # 后续4个int16_t (旋转编码器)
+                'rotary': lever,  # 后续4个int16_t (旋转编码器)
                 'switches': tuple(unpacked[16:18]),  # 2个uint16_t (开关状态)
                 'system_status': unpacked[18]  # uint8_t (系统状态)
             }

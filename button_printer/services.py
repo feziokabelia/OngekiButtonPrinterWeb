@@ -712,6 +712,7 @@ class HIDService:
 
     @staticmethod
     def get_pos(position):
+        global L_2, L_1, R_1, R_2
         pos_image = ""
         if position >= L_2:
             pos_image = "lever_-2"
