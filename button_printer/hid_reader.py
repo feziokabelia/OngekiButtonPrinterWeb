@@ -16,7 +16,7 @@ import os
 config = configparser.ConfigParser()
 
 print("hid_reader 启动！")
-print("version --1.3.1")
+print("version --1.3.2")
 
 
 # 获取exe所在目录的路径
@@ -139,8 +139,9 @@ def find_device_path(interface_number=4):
         if (device['vendor_id'] == VENDOR_ID and
                 device['product_id'] == PRODUCT_ID and
                 (
-                    (device['interface_number'] == interface_number and device['usage'] == 4) or
-                    (device['usage'] == 3072)  # nyageki
+                        (device['interface_number'] == interface_number and device['usage'] == 4) or
+                        (device['usage'] == 3072) or  # nyageki
+                        device['usage'] == 0x0004  # rainbow
                 )
         ):
             target_devices.append(device)
@@ -269,7 +270,16 @@ class RealHIDWebSocketReader:
             # 读取数据（非阻塞）
             # 大多数HID设备报告长度为64字节
             if DEVICE_NAME == 'io4':
-                data = self.hid_device.read(63)
+                try:
+                    data = self.hid_device.read(63)
+                except:
+                    path = find_device_path()
+                    try:
+                        self.hid_device = hid.Device(path=path)
+                    except:
+                        self.hid_device = hid.device()
+                        self.hid_device.open_path(path)
+                    data = self.hid_device.read(63)
             elif DEVICE_NAME == 'ontroller':
 
                 if idk == 1:

@@ -109,6 +109,30 @@ def find_device_path(interface_number=4):
         raise KeyError('具有多个相同vid pid interface_number=4 或者 usage == 3072的设备')
 
 
+def find_rainbow_path(interface_number=4):
+    """动态查找设备路径"""
+
+    devices = hid.enumerate()
+
+    target_devices = []
+
+    for device in devices:
+        # 匹配VID、PID和接口号
+        if (device['vendor_id'] == VENDOR_ID and
+                device['product_id'] == PRODUCT_ID and
+                (
+                        (device['usage'] == 0x0004)  # rainbow
+                )
+        ):
+            target_devices.append(device)
+
+    if len(target_devices) == 1:
+        device_info = target_devices[0]
+        return device_info['path']
+    else:
+        raise KeyError('具有多个相同vid pid interface_number=4 或者 usage == 3072的设备')
+
+
 def read_hid_device():
     global output_count
     last_data = None  # 缓存上一次的数据
@@ -118,7 +142,16 @@ def read_hid_device():
         device = hid.device()
         device.open(VENDOR_ID, PRODUCT_ID)
     while True:
-        data = device.read(STRUCT_SIZE)
+        try:
+            data = device.read(STRUCT_SIZE)
+        except: # rainbow
+            path = find_rainbow_path()
+            try:
+                device = hid.Device(path=path)
+            except:
+                device = hid.device()
+                device.open_path(path)
+            continue
         if not data:
             continue
         current_data = parse_output_t(bytes(data))
