@@ -16,7 +16,7 @@ import os
 config = configparser.ConfigParser()
 
 print("hid_reader 启动！")
-print("version --1.3.2")
+print("version --1.3.3")
 
 
 # 获取exe所在目录的路径
@@ -216,7 +216,7 @@ class RealHIDWebSocketReader:
             return False
 
     def on_move(self, x):
-        self.x = (x // 10) * 10  # 防抖动
+        self.x = (x // 10) * -10  # 防抖动 负数保证方向正确
 
     def initialize_hid_device(self):
         """初始化真实HID设备"""
